@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>원소의 섬 - Periodic Island (2.5D)</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Jua', sans-serif;
+            background: linear-gradient(135deg, #fdf2f8 0%, #ecfdf5 100%);
+        }
+        .game-shadow {
+            box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.2), 0 8px 10px -6px rgba(16, 185, 129, 0.2);
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen p-4">
+
+    <!-- 헤더 영역 -->
+    <div class="text-center mb-3">
+        <h1 class="text-3xl font-bold text-emerald-600 drop-shadow-sm">🏝️ 원소의 섬 : 2.5D 어드벤처</h1>
+        <p class="text-gray-600 text-sm mt-1">방향키로 동물의 숲 같은 마을을 돌아다니며 원소 친구들을 만나보세요!</p>
+    </div>
+
+    <!-- 메인 게임 보드 패널 -->
+    <div class="relative bg-emerald-100 border-4 border-emerald-400 rounded-3xl game-shadow overflow-hidden" style="width: 700px; height: 450px;">
+        <canvas id="gameCanvas" width="700" height="450" class="block"></canvas>
+
+        <!-- 도감 수집 상태 현황판 (우측 상단) -->
+        <div class="absolute top-3 right-3 bg-white/90 border-2 border-pink-300 rounded-2xl px-3 py-1.5 shadow-sm text-xs text-pink-600 font-bold flex items-center gap-1.5">
+            <span>📖 수집한 원소:</span>
+            <span id="collectedCount" class="text-emerald-600 text-sm">0 / 4</span>
+        </div>
+
+        <!-- 동물의 숲 감성 대화 말풍선 UI (하단) -->
+        <div id="dialogueBox" class="absolute bottom-4 left-4 right-4 bg-white/95 border-3 border-pink-300 rounded-2xl p-3.5 shadow-lg hidden flex items-center gap-4 transition-all duration-200">
+            <div id="npcAvatar" class="w-12 h-12 rounded-full bg-pink-100 border-2 border-pink-400 flex items-center justify-center text-2xl shadow-inner">🧪</div>
+            <div class="flex-1">
+                <div class="flex items-center justify-between">
+                    <h3 id="npcName" class="text-pink-600 font-bold text-base">원소 이름</h3>
+                    <span class="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">✨ 도감 등록 완료!</span>
+                </div>
+                <p id="npcText" class="text-gray-700 text-sm mt-0.5">대화 내용이 여기에 표시됩니다.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 조작 가이드 풋터 -->
+    <div class="mt-3 text-xs text-emerald-700 bg-emerald-50 px-4 py-2 rounded-full border border-emerald-200 shadow-sm">
+        🎮 조작법: 키보드 방향키 (↑ ↓ ← →) 또는 W, A, S, D
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const dialogueBox = document.getElementById('dialogueBox');
+        const npcNameEl = document.getElementById('npcName');
+        const npcTextEl = document.getElementById('npcText');
+        const npcAvatarEl = document.getElementById('npcAvatar');
+        const collectedCountEl = document.getElementById('collectedCount');
+
+        // 플레이어 객체 (2.5D 입체감 반영)
+        let player = {
+            x: 350,
+            y: 225,
+            radius: 16,
+            speed: 3.5,
+            color: '#f472b6',
+            animTimer: 0
+        };
+
+        // 마을 환경 오브젝트 (나무, 꽃, 바위 등)
+        const scenery = [
+            { type: 'tree', x: 80, y: 80, size: 30 },
+            { type: 'tree', x: 620, y: 90, size: 35 },
+            { type: 'tree', x: 100, y: 370, size: 28 },
+            { type: 'flower', x: 250, y: 90, color: '#fca5a5' },
+            { type: 'flower', x: 480, y: 350, color: '#fde047' },
+            { type: 'rock', x: 580, y: 260, size: 18 }
+        ];
+
+        // 원소 NPC 리스트 (마을 곳곳에 배치)
+        const npcs = [
+            { id: 1, symbol: 'H', name: '1번 수소', x: 150, y: 120, color: '#38bdf8', text: '안녕! 나는 가장 가벼운 원소 1번 수소(H)야! 우주에서 제일 많지!', collected: false },
+            { id: 2, symbol: 'He', name: '2번 헬륨', x: 550, y: 110, color: '#fbbf24', text: '하이파이브! 나는 2번 헬륨(He)이야. 목소리가 변하는 풍선에 들어가징~', collected: false },
+            { id: 3, symbol: 'Li', name: '3번 리튬', x: 180, y: 330, color: '#a78bfa', text: '반가워! 나는 3번 리튬(Li). 스마트폰 배터리에 꼭 들어가는 몸이지!', collected: false },
+            { id: 4, symbol: 'Be', name: '4번 베릴륨', x: 520, y: 320, color: '#34d399', text: '안녕? 나는 4번 베릴륨(Be)이야. 단단한 항공 합금에 많이 쓰여!', collected: false }
+        ];
+
+        let collectedCount = 0;
+        let keys = {};
+
+        window.addEventListener('keydown', (e) => { keys[e.key] = true; });
+        window.addEventListener('keyup', (e) => { keys[e.key] = false; });
+
+        function update() {
+            let moving = false;
+            let nextX = player.x;
+            let nextY = player.y;
+
+            if (keys['ArrowUp'] || keys['w'] || keys['W']) { nextY -= player.speed; moving = true; }
+            if (keys['ArrowDown'] || keys['s'] || keys['S']) { nextY += player.speed; moving = true; }
+            if (keys['ArrowLeft'] || keys['a'] || keys['A']) { nextX -= player.speed; moving = true; }
+            if (keys['ArrowRight'] || keys['d'] || keys['D']) { nextX += player.speed; moving = true; }
+
+            // 마을 경계 제한
+            player.x = Math.max(30, Math.min(canvas.width - 30, nextX));
+            player.y = Math.max(40, Math.min(canvas.height - 30, nextY));
+
+            if (moving) {
+                player.animTimer += 0.2;
+            }
+
+            // NPC와의 거리 체크 및 도감 수집
+            let closeNpc = null;
+            npcs.forEach(npc => {
+                let dist = Math.hypot(player.x - npc.x, player.y - npc.y);
+                if (dist < 50) {
+                    closeNpc = npc;
+                    if (!npc.collected) {
+                        npc.collected = true;
+                        collectedCount++;
+                        collectedCountEl.innerText = `${collectedCount} / 4`;
+                    }
+                }
+            });
+
+            if (closeNpc) {
+                dialogueBox.classList.remove('hidden');
+                npcNameEl.innerText = closeNpc.name;
+                npcTextEl.innerText = closeNpc.text;
+                npcAvatarEl.innerText = closeNpc.symbol;
+                npcAvatarEl.style.backgroundColor = closeNpc.color + '33';
+            } else {
+                dialogueBox.classList.add('hidden');
+            }
+        }
+
+        function draw() {
+            // 1. 2.5D 잔디 마을 배경 그리기
+            ctx.fillStyle = '#bbf7d0';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 잔디 패턴 결 무늬 효과
+            ctx.fillStyle = '#86efac';
+            for (let i = 0; i < canvas.width; i += 40) {
+                for (let j = 0; j < canvas.height; j += 40) {
+                    if ((i + j) % 80 === 0) {
+                        ctx.fillRect(i, j, 20, 10);
+                    }
+                }
+            }
+
+            // 2. 환경 오브젝트 그리기 (입체 나무, 꽃, 돌)
+            scenery.forEach(obj => {
+                if (obj.type === 'tree') {
+                    // 나무 그림자
+                    ctx.fillStyle = 'rgba(0,0,0,0.1)';
+                    ctx.beginPath();
+                    ctx.ellipse(obj.x, obj.y + obj.size/2, obj.size*0.7, obj.size*0.3, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    // 나무 기둥
+                    ctx.fillStyle = '#b45309';
+                    ctx.fillRect(obj.x - 6, obj.y, 12, 20);
+                    // 잎사귀 (동글동글한 동물의숲 스타일)
+                    ctx.fillStyle = '#15803d';
+                    ctx.beginPath();
+                    ctx.arc(obj.x, obj.y - 10, obj.size, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = '#22c55e';
+                    ctx.beginPath();
+                    ctx.arc(obj.x - 6, obj.y - 14, obj.size * 0.7, 0, Math.PI * 2);
+                    ctx.fill();
+                } else if (obj.type === 'flower') {
+                    ctx.fillStyle = obj.color;
+                    ctx.beginPath();
+                    ctx.arc(obj.x, obj.y, 6, 0, Math.PI * 2);
+                    ctx.arc(obj.x - 5, obj.y - 4, 4, 0, Math.PI * 2);
+                    ctx.arc(obj.x + 5, obj.y - 4, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = '#fef08a';
+                    ctx.beginPath();
+                    ctx.arc(obj.x, obj.y, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                } else if (obj.type === 'rock') {
+                    ctx.fillStyle = '#94a3b8';
+                    ctx.beginPath();
+                    ctx.arc(obj.x, obj.y, obj.size, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = '#cbd5e1';
+                    ctx.beginPath();
+                    ctx.arc(obj.x - 4, obj.y - 4, obj.size * 0.5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+
+            // 3. 원소 NPC 그리기 (입체감과 발광 효과)
+            npcs.forEach(npc => {
+                // 그림자
+                ctx.fillStyle = 'rgba(0,0,0,0.15)';
+                ctx.beginPath();
+                ctx.ellipse(npc.x, npc.y + 18, 16, 8, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // NPC 본체
+                ctx.beginPath();
+                ctx.arc(npc.x, npc.y, 22, 0, Math.PI * 2);
+                ctx.fillStyle = npc.color;
+                ctx.fill();
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = '#ffffff';
+                ctx.stroke();
+
+                // 원소 기호
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 15px Jua';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(npc.symbol, npc.x, npc.y);
+
+                // 수집 여부 작은 체크 마크
+                if (npc.collected) {
+                    ctx.fillStyle = '#22c55e';
+                    ctx.beginPath();
+                    ctx.arc(npc.x + 14, npc.y - 12, 8, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+            });
+
+            // 4. 플레이어 캐릭터 그리기 (입체 탐험가)
+            let bounce = Math.sin(player.animTimer) * 3; // 걸을 때 둥실둥실 움직임 효과
+
+            // 캐릭터 그림자
+            ctx.fillStyle = 'rgba(0,0,0,0.2)';
+            ctx.beginPath();
+            ctx.ellipse(player.x, player.y + 16, 14, 7, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 캐릭터 몸체
+            ctx.beginPath();
+            ctx.arc(player.x, player.y + bounce, player.radius, 0, Math.PI * 2);
+            ctx.fillStyle = player.color;
+            ctx.fill();
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+
+            // 탐험가 모자
+            ctx.fillStyle = '#db2777';
+            ctx.fillRect(player.x - 11, player.y + bounce - 18, 22, 6);
+            ctx.beginPath();
+            ctx.arc(player.x, player.y + bounce - 18, 8, Math.PI, 0, false);
+            ctx.fill();
+        }
+
+        function loop() {
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        loop();
+    </script>
+</body>
+</html>
